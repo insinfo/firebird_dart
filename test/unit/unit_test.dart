@@ -219,8 +219,7 @@ void main() {
 
   group('settings', () {
     test('DSN parsing', () {
-      final a = FbConnectionSettings.fromDsn(
-          r'10.0.0.5:c:\data\app.fdb');
+      final a = FbConnectionSettings.fromDsn(r'10.0.0.5:c:\data\app.fdb');
       expect(a.host, '10.0.0.5');
       expect(a.port, 3050);
       expect(a.database, r'c:\data\app.fdb');
@@ -237,6 +236,15 @@ void main() {
                   isolation: FbIsolation.snapshot, readOnly: true, wait: false)
               .toTpb(),
           [3, 8, 2, 7]);
+      expect(
+          const FbTransactionOptions(
+            isolation: FbIsolation.snapshot,
+            reserving: [
+              FbTableReservation('A', write: true, mode: FbLockMode.protected),
+              FbTableReservation('BC'),
+            ],
+          ).toTpb(),
+          [3, 9, 2, 6, 11, 1, 65, 4, 10, 2, 66, 67, 3]);
       expect(const FbTransactionOptions(lockTimeout: 5).toTpb(),
           [3, 9, 15, 17, 6, 21, 4, 5, 0, 0, 0]);
     });

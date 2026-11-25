@@ -1,5 +1,7 @@
 # firebird_dart
 
+[![CI](https://github.com/insinfo/firebird_dart/actions/workflows/ci.yml/badge.svg)](https://github.com/insinfo/firebird_dart/actions/workflows/ci.yml)
+
 Pure-Dart asynchronous Firebird driver. It implements the Firebird wire
 protocol directly over TCP: no `fbclient` library, no FFI, no runtime package
 dependencies. MIT licensed.
@@ -21,12 +23,14 @@ Built for server-side Dart (web back ends, workers, migration tools):
 
 | Server | Protocol | Authentication | Status |
 |---|---|---|---|
-| Firebird 2.1 / 2.5 | 10–12 | legacy (`crypt`, password never sent in clear text) | tested against Firebird 2.5.6 |
-| Firebird 3 / 4 / 5 | 13 | `Srp256`, `Srp`, `Legacy_Auth`; `Arc4` wire encryption | implemented, **not yet tested against a server** |
+| Firebird 2.1 / 2.5 | 10–12 | legacy (`crypt`, password never sent in clear text) | tested against Firebird 2.5 |
+| Firebird 3 / 4 / 5 | 13 | `Srp256`, `Srp`, `Legacy_Auth`; `Arc4` wire encryption | tested in CI (Docker images) |
 
-Not implemented yet: events (`POST_EVENT`), the Services API (backup, user
-management), ARRAY columns, wire compression, DECFLOAT decoding (returned as
-raw IEEE 754 bytes), protocol 14+ features (batch API, inline BLOBs).
+Not implemented yet: the Services API (backup, user management), ARRAY
+columns, wire compression, DECFLOAT decoding (returned as raw IEEE 754
+bytes), protocol 14+ features (batch API, inline BLOBs). Embedded mode is
+out of scope: it loads the engine library in-process, which a pure network
+driver does not do.
 
 ## Install
 
@@ -133,6 +137,46 @@ final tx = await conn.beginTransaction(const FbTransactionOptions(
 await tx.commit(); // or rollback(), commitRetaining(), rollbackRetaining()
 ```
 
+Firebird lets one connection hold several transactions at once; each
+`FbTransaction` is independent (for example a long snapshot reader next to
+short writers on the same attachment).
+
+Tables can be reserved when the transaction starts, so lock conflicts show up
+immediately:
+
+```dart
+final tx = await conn.beginTransaction(const FbTransactionOptions(
+  isolation: FbIsolation.snapshot,
+  reserving: [FbTableReservation('ACCOUNTS', write: true, mode: FbLockMode.protected)],
+));
+```
+
+### Two-phase commit across databases
+
+```dart
+await runDistributedTransaction([salesDb, stockDb], (txs) async {
+  await txs[0].execute('insert into orders values (?, ?)', [1, 10]);
+  await txs[1].execute('update stock set qty = qty - ? where id = ?', [10, 7]);
+}); // prepares both, then commits both; rolls both back on error
+```
+
+`FbTransaction.prepare()` exposes the first phase directly.
+
+## Events (POST_EVENT)
+
+```dart
+final listener = await FbConnection.connect(settings); // dedicated connection
+final sub = await listener.subscribeEvents(['ORDER_PAID', 'ORDER_CANCELLED']);
+sub.events.listen((e) => print('${e.name} posted ${e.count} time(s)'));
+// ...
+await sub.cancel();
+```
+
+Events are delivered after the posting transaction commits; posts made
+between two notifications are aggregated in `count`. The server opens a
+second socket for notifications on `RemoteAuxPort` (random by default):
+allow it through firewalls.
+
 ## Large results
 
 ```dart
@@ -227,7 +271,15 @@ dart test test/integration/legacy_test.dart
 ```
 
 `FB_TEST_DIR` sets where the scratch database is created (a directory the
-server can write to; defaults to the local temp directory).
+server can write to; defaults to the local temp directory). `FB_AUTH`
+(`srp256,srp,legacy`) and `FB_WIRE_CRYPT` (`enabled`, `required`,
+`disabled`) choose what the client offers; `FB_EXPECT_AUTH` and
+`FB_EXPECT_ENCRYPTED` make the tests assert what was negotiated.
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the
+integration suite against Firebird 2.5, 3, 4 and 5 in Docker, covering
+legacy authentication, Srp, Srp256, and Arc4-encrypted and unencrypted
+connections.
 
 Run the legacy check against a copy: the server updates the database header
 even for read-only work.

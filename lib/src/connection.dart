@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'engine.dart';
+import 'events.dart';
 import 'exceptions.dart';
 import 'result.dart';
 import 'settings.dart';
 import 'sql_params.dart';
 import 'types.dart';
+import 'wire/xdr.dart';
 import 'wire/constants.dart';
 
 /// Operations shared by connections, transactions and pools.
@@ -124,6 +126,13 @@ class FbConnection with FbExecutor {
     if (_engine.isClosed) return;
     _engine.wire.cancelOperation(fb_cancel_raise);
   }
+
+  /// Listens to database events (`POST_EVENT`). Notifications arrive on
+  /// a separate socket the server opens for this connection (its port is
+  /// `RemoteAuxPort` in firebird.conf, random by default). Use a dedicated
+  /// connection, not one leased from a pool.
+  Future<FbEventSubscription> subscribeEvents(List<String> names) =>
+      _engine.guarded(() => _engine.events.subscribe(names));
 
   /// Round trip to check the connection.
   Future<void> ping([Duration? timeout]) => _engine.guarded(
@@ -539,6 +548,39 @@ class FbConnection with FbExecutor {
   }
 }
 
+/// Runs [action] with one transaction per connection and commits them with
+/// two-phase commit: every transaction is prepared before any is
+/// committed, so the databases commit or roll back together. If a commit
+/// fails after all prepared, the remaining transactions stay in limbo
+/// until `gfix -commit/-rollback` resolves them.
+Future<T> runDistributedTransaction<T>(List<FbConnection> connections,
+    Future<T> Function(List<FbTransaction> transactions) action,
+    [FbTransactionOptions options = const FbTransactionOptions()]) async {
+  final txs = <FbTransaction>[];
+  try {
+    for (final c in connections) {
+      txs.add(await c.beginTransaction(options));
+    }
+    final result = await action(txs);
+    for (final tx in txs) {
+      await tx.prepare();
+    }
+    for (final tx in txs) {
+      await tx.commit();
+    }
+    return result;
+  } catch (_) {
+    for (final tx in txs) {
+      if (tx.isActive && !tx.connection.isClosed) {
+        try {
+          await tx.rollback();
+        } catch (_) {}
+      }
+    }
+    rethrow;
+  }
+}
+
 /// An explicit transaction.
 class FbTransaction with FbExecutor {
   final FbConnection connection;
@@ -663,6 +705,26 @@ class FbTransaction with FbExecutor {
       });
 
   // End --------------------------------------------------------------------
+
+  /// First phase of a two-phase commit: after it, [commit] or [rollback]
+  /// cannot fail for lack of resources. [message] is stored with the
+  /// transaction (gfix shows it for transactions left in limbo).
+  Future<void> prepare([List<int>? message]) => _engine.guarded(() async {
+        _checkActive();
+        final w = XdrWriter(32);
+        if (message == null) {
+          w
+            ..int32(op_prepare)
+            ..int32(_handle);
+        } else {
+          w
+            ..int32(op_prepare2)
+            ..int32(_handle)
+            ..buffer(message);
+        }
+        _engine.wire.send(w.takeBytes());
+        await _engine.wire.readResponse();
+      });
 
   Future<void> commit() => _end(_engine.commit);
   Future<void> rollback() => _end(_engine.rollback);

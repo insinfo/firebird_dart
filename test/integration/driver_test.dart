@@ -76,6 +76,11 @@ void main() {
     expect(info.serverVersion, contains('Firebird'));
     expect(info.sqlDialect, 3);
     expect(conn.protocolVersion, greaterThanOrEqualTo(10));
+    print('server: $info');
+    if (expectedAuth != null) expect(info.authPlugin, expectedAuth);
+    if (expectedEncrypted != null) {
+      expect(info.wireEncrypted, expectedEncrypted);
+    }
     await conn.ping();
     expect(await conn.checkHealth(), isTrue);
   });

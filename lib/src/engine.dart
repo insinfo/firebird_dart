@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'charset.dart';
+import 'events.dart';
 import 'exceptions.dart';
 import 'result.dart';
 import 'settings.dart';
@@ -126,10 +127,16 @@ class Engine {
 
   bool get isClosed => wire.isClosed || _broken;
 
+  EventManager? _events;
+
+  /// Event channel, created on first use.
+  EventManager get events => _events ??= EventManager(this);
+
   /// Marks the attachment unusable after a transport failure.
   Never fail(Object error, StackTrace st) {
     if (error is FbConnectionException || error is StateError) {
       _broken = true;
+      _events?.close();
       wire.destroy();
     }
     Error.throwWithStackTrace(error, st);
@@ -954,6 +961,7 @@ class Engine {
   }
 
   Future<void> close() async {
+    await _events?.close();
     if (wire.isClosed) return;
     try {
       clearStatementCache();

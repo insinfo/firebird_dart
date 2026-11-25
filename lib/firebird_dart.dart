@@ -8,7 +8,9 @@ export 'src/connection.dart'
         FbExecutor,
         FbPreparedStatement,
         FbServerInfo,
-        FbTransaction;
+        FbTransaction,
+        runDistributedTransaction;
+export 'src/events.dart' show FbEvent, FbEventSubscription;
 export 'src/exceptions.dart';
 export 'src/error_codes_public.dart';
 export 'src/pool.dart';

@@ -14,3 +14,6 @@ First version.
 - Exact NUMERIC/DECIMAL (`FbDecimal`), Windows-1252 codec and
   `CHARACTER SET NONE` handling for legacy databases.
 - Database creation and drop.
+- Database events (`POST_EVENT`) through the auxiliary connection.
+- Table reservation (`RESERVING`) and `ignoreLimbo` in transaction options.
+- Two-phase commit: `FbTransaction.prepare` and `runDistributedTransaction`.

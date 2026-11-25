@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze and unit tests (Dart ${{ matrix.sdk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['3.6.0', stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+      - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed lib test example benchmark tool
+      - run: dart analyze --fatal-infos
+      - run: dart test test/unit
+
+  integration:
+    name: Firebird ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    needs: analyze
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Firebird 2.5: protocol 12, legacy authentication, no encryption.
+          - name: '2.5 (Legacy_Auth)'
+            image: jacobalberty/firebird:2.5-ss
+            env: '-e ISC_PASSWORD=masterkey'
+            test_dir: /firebird/data
+            auth: ''
+            wire_crypt: enabled
+            expect_auth: Legacy_Auth
+            expect_encrypted: 'false'
+          # Firebird 3: protocol 13, Srp, Arc4 required by the server.
+          - name: '3 (Srp + Arc4)'
+            image: firebirdsql/firebird:3
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey'
+            test_dir: /var/lib/firebird/data
+            auth: ''
+            wire_crypt: required
+            expect_auth: Srp
+            expect_encrypted: 'true'
+          # Firebird 4: Srp256 with Arc4.
+          - name: '4 (Srp256 + Arc4)'
+            image: firebirdsql/firebird:4
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey'
+            test_dir: /var/lib/firebird/data
+            auth: ''
+            wire_crypt: required
+            expect_auth: Srp256
+            expect_encrypted: 'true'
+          # Firebird 4: SHA-1 Srp proof, encryption declined by the client.
+          - name: '4 (Srp, no encryption)'
+            image: firebirdsql/firebird:4
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey -e FIREBIRD_CONF_WireCrypt=Enabled'
+            test_dir: /var/lib/firebird/data
+            auth: srp
+            wire_crypt: disabled
+            expect_auth: Srp
+            expect_encrypted: 'false'
+          # Firebird 5: Srp256 with Arc4.
+          - name: '5 (Srp256 + Arc4)'
+            image: firebirdsql/firebird:5
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey'
+            test_dir: /var/lib/firebird/data
+            auth: ''
+            wire_crypt: required
+            expect_auth: Srp256
+            expect_encrypted: 'true'
+          # Firebird 5: Legacy_Auth plugin over protocol 13.
+          - name: '5 (Legacy_Auth)'
+            image: firebirdsql/firebird:5
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey -e FIREBIRD_USE_LEGACY_AUTH=true'
+            test_dir: /var/lib/firebird/data
+            auth: legacy
+            wire_crypt: enabled
+            expect_auth: Legacy_Auth
+            expect_encrypted: 'false'
+    env:
+      FB_HOST: 127.0.0.1
+      FB_PORT: '3050'
+      FB_USER: SYSDBA
+      FB_PASSWORD: masterkey
+      FB_TEST_DIR: ${{ matrix.test_dir }}
+      FB_AUTH: ${{ matrix.auth }}
+      FB_WIRE_CRYPT: ${{ matrix.wire_crypt }}
+      FB_EXPECT_AUTH: ${{ matrix.expect_auth }}
+      FB_EXPECT_ENCRYPTED: ${{ matrix.expect_encrypted }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Start Firebird
+        # Host networking makes the random event port (RemoteAuxPort) reachable.
+        run: |
+          docker run -d --name firebird --network host ${{ matrix.env }} ${{ matrix.image }}
+          for i in $(seq 1 90); do
+            if (echo > /dev/tcp/127.0.0.1/3050) >/dev/null 2>&1; then
+              echo "Firebird is listening after ${i}s"
+              sleep 3
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs firebird
+          exit 1
+      - run: dart pub get
+      - name: Integration tests
+        run: dart test test/integration --concurrency=1 --reporter=expanded
+      - name: Server log
+        if: failure()
+        run: |
+          docker logs firebird || true
+          docker exec firebird sh -c 'cat /var/lib/firebird/log/firebird.log /opt/firebird/firebird.log /usr/local/firebird/firebird.log 2>/dev/null | tail -100' || true

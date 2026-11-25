@@ -16,6 +16,30 @@ enum FbIsolation {
   snapshotTableStability,
 }
 
+/// Lock mode of a reserved table.
+enum FbLockMode {
+  /// Others may read and, with write reservations, write too.
+  shared,
+
+  /// Others may read but not write.
+  protected,
+
+  /// Only this transaction may access the table (snapshot table
+  /// stability).
+  exclusive,
+}
+
+/// A table reserved when the transaction starts (`RESERVING ... FOR`),
+/// so lock conflicts surface at start instead of mid-transaction.
+class FbTableReservation {
+  final String table;
+  final bool write;
+  final FbLockMode mode;
+
+  const FbTableReservation(this.table,
+      {this.write = false, this.mode = FbLockMode.shared});
+}
+
 /// Options used to start a transaction (the TPB).
 class FbTransactionOptions {
   final FbIsolation isolation;
@@ -35,6 +59,12 @@ class FbTransactionOptions {
   /// loads.
   final bool noAutoUndo;
 
+  /// Tables locked at transaction start.
+  final List<FbTableReservation> reserving;
+
+  /// Ignore records of transactions in limbo (two-phase commit).
+  final bool ignoreLimbo;
+
   const FbTransactionOptions({
     this.isolation = FbIsolation.readCommitted,
     this.readOnly = false,
@@ -42,6 +72,8 @@ class FbTransactionOptions {
     this.lockTimeout,
     this.recordVersion = true,
     this.noAutoUndo = false,
+    this.reserving = const [],
+    this.ignoreLimbo = false,
   });
 
   /// Read-only read-committed transaction. Firebird does not let these hold
@@ -69,6 +101,16 @@ class FbTransactionOptions {
       b.int32(isc_tpb_lock_timeout, lockTimeout!);
     }
     if (noAutoUndo) b.tag(isc_tpb_no_auto_undo);
+    if (ignoreLimbo) b.tag(isc_tpb_ignore_limbo);
+    for (final r in reserving) {
+      b.bytes(r.write ? isc_tpb_lock_write : isc_tpb_lock_read,
+          utf8.encode(r.table));
+      b.tag(switch (r.mode) {
+        FbLockMode.shared => isc_tpb_shared,
+        FbLockMode.protected => isc_tpb_protected,
+        FbLockMode.exclusive => isc_tpb_exclusive,
+      });
+    }
     return b.build();
   }
 }
