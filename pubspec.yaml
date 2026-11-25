@@ -1,0 +1,15 @@
+name: firebird_dart
+version: 0.1.0
+description: >
+  Pure-Dart Firebird driver that implements the Firebird wire protocol
+  directly, without fbclient or FFI.
+repository: https://github.com/insinfo/firebird_dart
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+
+dev_dependencies:
+  test: ^1.25.15
+  lints: ^5.1.1
