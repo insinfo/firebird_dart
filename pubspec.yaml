@@ -1,9 +1,16 @@
 name: firebird_dart
 version: 0.1.0
 description: >
-  Pure-Dart Firebird driver that implements the Firebird wire protocol
-  directly, without fbclient or FFI.
+  Pure-Dart asynchronous Firebird driver (2.5 to 5) implementing the wire
+  protocol directly, without fbclient or FFI: pool, transactions, events,
+  BLOBs, SRP and Arc4.
 repository: https://github.com/insinfo/firebird_dart
+issue_tracker: https://github.com/insinfo/firebird_dart/issues
+topics:
+  - firebird
+  - database
+  - sql
+  - driver
 
 environment:
   sdk: ^3.6.0

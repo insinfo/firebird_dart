@@ -1,6 +1,7 @@
 # firebird_dart
 
 [![CI](https://github.com/insinfo/firebird_dart/actions/workflows/ci.yml/badge.svg)](https://github.com/insinfo/firebird_dart/actions/workflows/ci.yml)
+[![pub package](https://img.shields.io/pub/v/firebird_dart.svg)](https://pub.dev/packages/firebird_dart)
 
 Pure-Dart asynchronous Firebird driver. It implements the Firebird wire
 protocol directly over TCP: no `fbclient` library, no FFI, no runtime package
@@ -34,10 +35,8 @@ driver does not do.
 
 ## Install
 
-```yaml
-dependencies:
-  firebird_dart:
-    git: https://github.com/insinfo/firebird_dart.git
+```powershell
+dart pub add firebird_dart
 ```
 
 ```dart
