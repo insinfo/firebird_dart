@@ -106,3 +106,34 @@ bool _isIdentPart(int c) =>
   throw FbUsageException(
       'params must be a List (for ?) or a Map<String, Object?> (for @name)');
 }
+
+/// Whether [sql] starts (after blanks and comments) with SELECT or WITH.
+/// Only such statements run in the read-only auto-commit transaction:
+/// Firebird 5 also reports DML with RETURNING as a cursor.
+bool isSelectSql(String sql) {
+  var i = 0;
+  final n = sql.length;
+  while (i < n) {
+    final c = sql.codeUnitAt(i);
+    if (c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D || c == 0x28) {
+      i++; // blanks and opening parentheses
+    } else if (c == 0x2D && i + 1 < n && sql.codeUnitAt(i + 1) == 0x2D) {
+      final end = sql.indexOf('\n', i);
+      if (end < 0) return false;
+      i = end + 1;
+    } else if (c == 0x2F && i + 1 < n && sql.codeUnitAt(i + 1) == 0x2A) {
+      final end = sql.indexOf('*/', i + 2);
+      if (end < 0) return false;
+      i = end + 2;
+    } else {
+      break;
+    }
+  }
+  bool word(String w) {
+    if (i + w.length > n) return false;
+    if (sql.substring(i, i + w.length).toUpperCase() != w) return false;
+    return i + w.length == n || !_isIdentPart(sql.codeUnitAt(i + w.length));
+  }
+
+  return word('SELECT') || word('WITH');
+}

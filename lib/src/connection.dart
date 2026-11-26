@@ -235,6 +235,7 @@ class FbConnection with FbExecutor {
     return _engine.guarded(() async {
       final known = fixed?.type ?? _engine.cachedType(sql);
       var readOnly = settings.readOnlyAutoCommitSelects &&
+          isSelectSql(sql) &&
           (known == null || known.returnsCursor);
       var tr = await _engine.startTransaction(readOnly
           ? FbTransactionOptions.readOnlyCommitted
@@ -405,7 +406,9 @@ class FbConnection with FbExecutor {
         rows.add(FbRow(r, st.schema));
       }
     });
-    return FbResult(st.schema, rows);
+    // Firebird 5 runs DML ... RETURNING as a cursor: one row per change.
+    return FbResult(st.schema, rows,
+        affectedRows: isSelectSql(st.sql) ? 0 : rows.length);
   }
 
   Future<List<Map<String, Object?>>> _collectMaps(
@@ -471,6 +474,7 @@ class FbConnection with FbExecutor {
         if (ownTx) {
           final known = fixed?.type ?? _engine.cachedType(sql);
           readOnly = settings.readOnlyAutoCommitSelects &&
+              isSelectSql(sql) &&
               (known == null || known.returnsCursor);
           tr = await _engine.startTransaction(readOnly
               ? FbTransactionOptions.readOnlyCommitted

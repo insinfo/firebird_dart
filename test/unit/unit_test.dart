@@ -192,6 +192,17 @@ void main() {
           throwsA(isA<FbUsageException>()));
     });
 
+    test('recognises SELECT statements', () {
+      expect(isSelectSql('select 1 from rdb\$database'), isTrue);
+      expect(isSelectSql('  -- c\n /* x */ (SELECT 1)'), isTrue);
+      expect(isSelectSql('with recursive t as (select 1) select * from t'),
+          isTrue);
+      expect(isSelectSql('selection'), isFalse);
+      expect(isSelectSql('update t set a = 1 returning a'), isFalse);
+      expect(
+          isSelectSql('execute block returns (x int) as begin end'), isFalse);
+    });
+
     test('resolveParams accepts lists and maps', () {
       expect(resolveParams('select ?', [1]).$2, [1]);
       expect(resolveParams('select @v', {'v': 2}).$1, 'select ?');

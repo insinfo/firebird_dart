@@ -120,6 +120,10 @@ jobs:
           docker logs firebird
           exit 1
       - run: dart pub get
+      - name: Authentication probe
+        # 40 consecutive logins; prints the handshake trace of any failure.
+        continue-on-error: true
+        run: dart run tool/auth_probe.dart 40
       - name: Integration tests
         run: dart test test/integration --concurrency=1 --reporter=expanded
       - name: Server log

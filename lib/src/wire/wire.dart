@@ -12,6 +12,15 @@ import '../settings.dart';
 import 'constants.dart';
 import 'xdr.dart';
 
+/// Internal diagnostic hook: receives a line per handshake step when set.
+/// Not part of the public API (used by `tool/auth_probe.dart`).
+void Function(String message)? fbProtocolTrace;
+
+void _trace(String Function() message) {
+  final t = fbProtocolTrace;
+  if (t != null) t(message());
+}
+
 /// Generic `op_response` packet.
 class FbResponse {
   final int handle;
@@ -399,6 +408,8 @@ class FbWire {
     protocolVersion = input.readInt32() & FB_PROTOCOL_MASK;
     input.readInt32(); // architecture
     acceptType = input.readInt32() & ptype_MASK;
+    _trace(() => 'accept op=$op protocol=$protocolVersion type=$acceptType '
+        'A.hex=${_srp.publicKeyHex.length}');
 
     if (op == op_accept) {
       // Firebird 2.x (or a 3+ server without plugin data): legacy login in
@@ -410,8 +421,16 @@ class FbWire {
     var data = await input.xdrBuffer();
     final plugin = ascii.decode(await input.xdrBuffer());
     final isAuthenticated = await input.int32();
-    await input.xdrBuffer(); // keys
-    authPlugin = plugin;
+    final keys = await input.xdrBuffer();
+    // A server that authenticated with the data sent in op_connect may
+    // leave the plugin name empty: it is the first plugin offered.
+    authPlugin = plugin.isNotEmpty
+        ? plugin
+        : _pluginName(settings.authPlugins.isEmpty
+            ? FbAuthPlugin.legacyAuth
+            : settings.authPlugins.first);
+    _trace(() => 'auth plugin=$plugin authenticated=$isAuthenticated '
+        'data=${data.length} keys=${keys.length}');
 
     Uint8List authData = Uint8List(0);
     Uint8List? sessionKey;
@@ -437,6 +456,8 @@ class FbWire {
         final keyLen = data[2 + saltLen] | (data[3 + saltLen] << 8);
         final keyHex =
             ascii.decode(data.sublist(4 + saltLen, 4 + saltLen + keyLen));
+        _trace(() => 'srp salt=$saltLen B.hex=$keyLen/${keyHex.length} '
+            'rest=${data.length - 4 - saltLen - keyLen}');
         final proof = _srp.clientProof(
           user: _normalizedUser,
           password: settings.password,
@@ -460,7 +481,9 @@ class FbWire {
               ? authData
               : utf8.encode(bytesToHex(authData)),
           plugin);
+      _trace(() => 'cont_auth sent proof=${authData.length}');
       await readResponse();
+      _trace(() => 'cont_auth accepted');
       _pendingAuthData = null;
     } else {
       _pendingAuthData = authData.isEmpty ? null : authData;
