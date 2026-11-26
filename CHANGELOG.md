@@ -5,8 +5,10 @@
 First version.
 
 - Firebird wire protocol 10–13 in pure Dart, without fbclient or FFI.
-- Legacy authentication (Firebird 2.x); SRP/SRP256 and Arc4 wire encryption
-  for Firebird 3+ (not yet tested against a server).
+- Legacy authentication (Firebird 2.x); Srp/Srp256, Legacy_Auth and Arc4
+  wire encryption for Firebird 3+.
+- CI (GitHub Actions) runs the integration suite against Firebird 2.5, 3, 4
+  and 5 in Docker.
 - Connections, explicit and implicit transactions, savepoints, prepared
   statements with an LRU cache, pipelined batch execution, streaming, BLOB
   read/write, timeouts with server-side cancellation, connection pool.
