@@ -66,7 +66,8 @@ jobs:
           # Firebird 4: SHA-1 Srp proof, encryption declined by the client.
           - name: '4 (Srp, no encryption)'
             image: firebirdsql/firebird:4
-            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey -e FIREBIRD_CONF_WireCrypt=Enabled'
+            # Firebird 4+ only enables Srp256 by default.
+            env: '-e FIREBIRD_ROOT_PASSWORD=masterkey -e FIREBIRD_CONF_WireCrypt=Enabled -e FIREBIRD_CONF_AuthServer=Srp256,Srp'
             test_dir: /var/lib/firebird/data
             auth: srp
             wire_crypt: disabled

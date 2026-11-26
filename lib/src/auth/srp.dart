@@ -64,7 +64,10 @@ class SrpClient {
     final gx = generator.modPow(x, n);
     final kgx = (multiplier * gx) % n;
     final diff = (serverPublicKey - kgx) % n;
-    final aux = (privateKey + u * x) % n;
+    // S = (B - k·g^x)^(a + u·x) mod N. The exponent must not be reduced
+    // modulo N: that is only correct while a + u·x < N, and a 1024-bit
+    // private key exceeds N about 10% of the time.
+    final aux = privateKey + u * x;
     final secret = diff.modPow(aux, n);
     final k = Digest.sha1(bigIntToBytes(secret));
 

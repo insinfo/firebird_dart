@@ -96,6 +96,41 @@ void main() {
           '1277432915985975349439481660349303019122249719989');
     });
 
+    test('SRP client and server derive the same session key', () {
+      // Server side of SRP-6a, as Firebird computes it.
+      final n = SrpClient.prime;
+      final g = SrpClient.generator;
+      final salt = List<int>.generate(32, (i) => i * 7 & 0xFF);
+      const user = 'SYSDBA', password = 'masterkey';
+      final inner =
+          Digest.sha1([...user.codeUnits, 0x3A, ...password.codeUnits]);
+      final x = bytesToBigInt(Digest.sha1([...salt, ...inner]));
+      final v = g.modPow(x, n);
+      final b = BigInt.parse('1234567890abcdef' * 8, radix: 16);
+      final serverKey = (SrpClient.multiplier * v + g.modPow(b, n)) % n;
+      // Private keys below and above N (the second used to fail).
+      for (final a in [
+        BigInt.from(987654321),
+        n + BigInt.from(12345),
+        (BigInt.one << 1024) - BigInt.one,
+      ]) {
+        final client = SrpClient(a);
+        final proof = client.clientProof(
+            user: user,
+            password: password,
+            salt: salt,
+            serverPublicKey: serverKey,
+            sha256Proof: false);
+        final u = bytesToBigInt(Digest.sha1([
+          ...bigIntToBytes(client.publicKey),
+          ...bigIntToBytes(serverKey),
+        ]));
+        final serverSecret = (client.publicKey * v.modPow(u, n)).modPow(b, n);
+        expect(proof.sessionKey, Digest.sha1(bigIntToBytes(serverSecret)),
+            reason: 'private key ${a.bitLength} bits');
+      }
+    });
+
     test('SRP proof is deterministic for a fixed private key', () {
       final c = SrpClient(BigInt.from(123456789));
       final serverKey =
